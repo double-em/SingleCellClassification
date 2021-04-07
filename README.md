@@ -3,3 +3,5 @@
 
 Kaggle Competition:
 https://www.kaggle.com/c/hpa-single-cell-image-classification/
+
+*Made as a School Project*
