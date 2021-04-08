@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 from PIL import Image
 from fastai.data.transforms import get_image_files
 
@@ -16,31 +17,78 @@ from torch import Tensor
 
 class HPAImage:
 
-    def __init__(self, id, ext, path, size: int = None, device):
+    def __init__(self, id: str, ext: str, path: Path, device: str, size: int = None):
         self.id = id
         self.ext = ext
         self.path = path
         self.size = size
         self.device = device
 
-    def rgb(self, size: int = None):
+        self.fname = path/f'{id}.{ext}'
+
+        self.r_ten = None
+        self.g_ten = None
+        self.b_ten = None
+
+    def rgb_image(self, size: int = None):
         if size is None:
             size = self.size
 
-        assemble_rgb_image(self.r(), self)
+        return assemble_rgb_image(self.r_tensor(), self.g_tensor(), self.b_tensor())
 
-    def r(self):
-        return self.get_channel("red")
+    def r_image(self):
+        return image_from_tensor(self.r_tensor(), mode="P")
 
-    def g(self):
-        return self.get_channel("green")
+    def r_tensor(self):
+        if self.r_ten is None:
+            self.r_ten = self.get_channel("red")
+            return self.r_ten
+        return self.r_ten
 
-    def b(self):
-        return self.get_channel("blue")
+    def g_image(self):
+        return image_from_tensor(self.g_tensor(), mode="P")
+
+    def g_tensor(self):
+        if self.g_ten is None:
+            self.g_ten = self.get_channel("green")
+            return self.g_ten
+        return self.g_ten
+
+    def b_image(self):
+        return image_from_tensor(self.b_tensor(), mode="P")
+
+    def b_tensor(self):
+        if self.b_ten is None:
+            self.b_ten = self.get_channel("blue")
+            return self.b_ten
+        return self.b_ten
 
     def get_channel(self, channel: str):
         path = f'{self.path}/{self.id}_{channel}.{self.ext}'
-        return read_img(path=path, interp_size=interp_size, device=device)
+        return read_img(path=path, interp_size=self.size, device=self.device)
+
+    def plot_all(self, rows=2, cols=2, color="#0A0"):
+        titles = ["red", "green", "blue", "rgb"]
+        images = [self.r_image(), self.g_image(), self.b_image(), self.rgb_image()]
+        figure, ax = plt.subplots(nrows=rows, ncols=cols)
+        for idx, image in enumerate(images):
+            axes = np.ravel(ax)[idx]
+            axes.imshow(image)
+            axes.set_axis_off()
+            axes.set_title(titles[idx], color=color)
+        plt.tight_layout()
+        plt.show()
+
+
+def show_images(images: list, rows=1, cols=1):
+    figure, ax = plt.subplots(nrows=rows, ncols=cols)
+    for idx, image in enumerate(images):
+        np.ravel(ax)[idx].imshow(image)
+        np.ravel(ax)[idx].set_axis_off()
+        np.ravel(ax)[idx].set_title(image_id)
+    plt.tight_layout()
+    plt.show()
+
 
 def select_images(folder_path: str, size_image: int) -> list:
     return [img_path for img_path in get_image_files(folder_path) if is_image_size(img_path, size_image)]
@@ -79,7 +127,7 @@ def read_img(interp_size: int, path: str, device: str = None, interpolation_mode
     return img
 
 
-def pill_to_tensor(image: Image.Image) -> TensorImage:
+def pill_to_tensor(image: Image.Image) -> Tensor:
     arr = np.asarray(image)
 
     if arr.ndim==2 : arr = np.expand_dims(arr,2)
@@ -102,18 +150,20 @@ def get_rgb_pieces_tensors(path: str, img_format: str, interp_size: int, device:
 
     return red, green, blue
 
-def image_from_tensor(tensor: Tensor) -> Image.Image:
+def image_from_tensor(tensor: Tensor, mode: str = None) -> Image.Image:
     # Array needs to be on the CPU to read the image via. 'Image.fromarray()'
+    tensor = torch.transpose(tensor, dim0=2, dim1=0)
+
+    if mode is not "RGB":
+        tensor = tensor[:,:,0]
     arr = tensor.cpu().numpy()
-    return Image.fromarray(arr, "RGB")
+    return Image.fromarray(arr, mode)
 
 def assemble_rgb_image(r: Tensor, g: Tensor, b: Tensor, device: str = None) -> Image.Image:
-    stacked_image = torch.stack([b, g, r], axis=1)
+    stacked_image = torch.stack([r, g, b], axis=1)
     stacked_image = stacked_image[0, :, :, :]
 
-    stacked_image = torch.transpose(stacked_image, dim0=2, dim1=0)
-
-    return image_from_tensor(stacked_image)
+    return image_from_tensor(stacked_image, mode="RGB")
 
 
 def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destination: str, csv_path: str, device: str = None, img_format="png"):
