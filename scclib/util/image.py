@@ -14,6 +14,33 @@ from fastai.vision.all import *
 import torch.nn.functional as nnf
 from torch import Tensor
 
+class HPAImage:
+
+    def __init__(self, id, ext, path, size: int = None, device):
+        self.id = id
+        self.ext = ext
+        self.path = path
+        self.size = size
+        self.device = device
+
+    def rgb(self, size: int = None):
+        if size is None:
+            size = self.size
+
+        assemble_rgb_image(self.r(), self)
+
+    def r(self):
+        return self.get_channel("red")
+
+    def g(self):
+        return self.get_channel("green")
+
+    def b(self):
+        return self.get_channel("blue")
+
+    def get_channel(self, channel: str):
+        path = f'{self.path}/{self.id}_{channel}.{self.ext}'
+        return read_img(path=path, interp_size=interp_size, device=device)
 
 def select_images(folder_path: str, size_image: int) -> list:
     return [img_path for img_path in get_image_files(folder_path) if is_image_size(img_path, size_image)]
@@ -52,7 +79,7 @@ def read_img(interp_size: int, path: str, device: str = None, interpolation_mode
     return img
 
 
-def pill_to_tensor(image: Image.Image)->TensorImage:
+def pill_to_tensor(image: Image.Image) -> TensorImage:
     arr = np.asarray(image)
 
     if arr.ndim==2 : arr = np.expand_dims(arr,2)
@@ -65,8 +92,31 @@ def pill_to_tensor(image: Image.Image)->TensorImage:
 
     return torch.from_numpy(arr)
 
+def get_rgb_pieces_tensors(path: str, img_format: str, interp_size: int, device: str = None):
+    # We only read RGB and not RGBY
+    # Because in previous models trained on the HPA set
+    # the Yellow channel did not make a difference in accuracy
+    red = read_img(path=f'{path}_red.{img_format}', interp_size=interp_size, device=device)
+    green = read_img(path=f'{path}_green.{img_format}', interp_size=interp_size, device=device)
+    blue = read_img(path=f'{path}_blue.{img_format}', interp_size=interp_size, device=device)
 
-def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destination: str, csv_path: str, device: str = None, img_format="jpg"):
+    return red, green, blue
+
+def image_from_tensor(tensor: Tensor) -> Image.Image:
+    # Array needs to be on the CPU to read the image via. 'Image.fromarray()'
+    arr = tensor.cpu().numpy()
+    return Image.fromarray(arr, "RGB")
+
+def assemble_rgb_image(r: Tensor, g: Tensor, b: Tensor, device: str = None) -> Image.Image:
+    stacked_image = torch.stack([b, g, r], axis=1)
+    stacked_image = stacked_image[0, :, :, :]
+
+    stacked_image = torch.transpose(stacked_image, dim0=2, dim1=0)
+
+    return image_from_tensor(stacked_image)
+
+
+def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destination: str, csv_path: str, device: str = None, img_format="png"):
     all_cells = []
     num_files = len(df)
 
@@ -83,28 +133,15 @@ def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destina
 
         if fname.is_file():
             continue
-
-        # We only read RGB and not RGBY
-        # Because in previous models trained on the HPA set
-        # the Yellow channel did not make a difference in accuracy
-        red = read_img(f'{img_source}/{image_id}_red', img_size, device=device)
-        green = read_img(f'{img_source}/{image_id}_green', img_size, device=device)
-        blue = read_img(f'{img_source}/{image_id}_blue', img_size, device=device)
-
-        stacked_image = torch.stack([blue, green, red], axis=1)
-        stacked_image = stacked_image[0,:,:,:]
-
-        stacked_image = torch.transpose(stacked_image, dim0=2, dim1=0)
-
-        # Array needs to be on the CPU to read the image via. 'Image.fromarray()'
-        arr = stacked_image.cpu().numpy()
-        im = Image.fromarray(arr, "RGB")
         
         # Format needs to be 'JPEG' to save as jpg.
         if img_format.lower() == "jpg":
             img_format = "JPEG"
 
-        im.save(fname, format=img_format)
+        r, g, b = get_rgb_pieces_tensors(f'{img_source}/{image_id}', img_format, img_size, device)
+
+        im = assemble_rgb_image(image_id, img_size, img_source, img_format, device)
+        im.save(fname, format=img_format.upper())
 
     cell_df = pd.DataFrame(all_cells)
     cell_df.to_csv(csv_path, index=False)
