@@ -30,7 +30,7 @@ class HPAImage:
         self.g_ten = None
         self.b_ten = None
 
-    def rgb_image(self, size: int = None):
+    def rgb_image(self, size: int = None) -> Image.Image:
         if size is None:
             size = self.size
 
@@ -99,7 +99,7 @@ def is_image_size(path: str, size: int) -> bool:
     return w >= size and h >= size
 
 
-def read_img(interp_size: int, path: str, device: str = None, interpolation_mode="bicubic") -> Tensor:
+def read_img(interp_size: int, path: str, device: str = None, interpolation_mode="bilinear") -> Tensor:
     img = Image.open(path)
 
     size = (interp_size, interp_size)
@@ -111,7 +111,7 @@ def read_img(interp_size: int, path: str, device: str = None, interpolation_mode
     
     # Make another dimension so we can use interpolation
     img = img.unsqueeze(0)
-    
+
     # Make the tensor float32 so we can use interpolation
     img = img.float()
 
@@ -151,11 +151,12 @@ def get_rgb_pieces_tensors(path: str, img_format: str, interp_size: int, device:
     return red, green, blue
 
 def image_from_tensor(tensor: Tensor, mode: str = None) -> Image.Image:
-    # Array needs to be on the CPU to read the image via. 'Image.fromarray()'
     tensor = torch.transpose(tensor, dim0=2, dim1=0)
 
     if mode is not "RGB":
         tensor = tensor[:,:,0]
+
+    # Array needs to be on the CPU to read the image via. 'Image.fromarray()'
     arr = tensor.cpu().numpy()
     return Image.fromarray(arr, mode)
 
@@ -188,9 +189,14 @@ def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destina
         if img_format.lower() == "jpg":
             img_format = "JPEG"
 
-        r, g, b = get_rgb_pieces_tensors(f'{img_source}/{image_id}', img_format, img_size, device)
+        image = HPAImage(id=image_id,
+                         ext=img_format,
+                         path=img_source,
+                         device=device,
+                         size=512)
 
-        im = assemble_rgb_image(image_id, img_size, img_source, img_format, device)
+        im = image.rgb_image()
+
         im.save(fname, format=img_format.upper())
 
     cell_df = pd.DataFrame(all_cells)
