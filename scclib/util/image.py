@@ -193,7 +193,7 @@ def create_samples(img_size: int, df: pd.DataFrame, img_source: str, img_destina
                          ext=img_format,
                          path=img_source,
                          device=device,
-                         size=512)
+                         size=img_size)
 
         im = image.rgb_image()
 
